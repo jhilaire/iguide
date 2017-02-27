@@ -2,7 +2,7 @@
 # Process data
 #=================================================================================
 cat("Processing data...\n")
-p_dataLong = p_data %>% gather(variable,value,-country,-year)
+p_dataLong <- p_data %>% gather(variable,value,-country,-year) #,-longname,-unit,-source)
 
 choice_countries <- as.list(levels(p_dataLong$country))
 names(choice_countries) <- levels(p_dataLong$country)

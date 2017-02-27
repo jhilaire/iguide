@@ -23,232 +23,319 @@ shinyServer(function(input, output, session) {
   
   #=========== OBSERVE =======================
   # Panel 1: Define variables
-  observe({
+  observe(label="observe_Panel1_defineVariables", {
     if (!is.null(input$variableDefinition)) {
       u_variableDefinition <<- hot_to_r(input$variableDefinition)
     } else {
-      if (is.null(values[["u_variableDefinition"]]))
+      if (is.null(values[["u_variableDefinition"]])) {
         u_variableDefinition <<- u_variableDefinition
-      else
+      } else {
         u_variableDefinition <<- values[["u_variableDefinition"]]
+      }
     }
     
     # Update variable choice
     choice_vars        <<- as.list(u_variableDefinition$variable[which(u_variableDefinition$type != "x")])
     names(choice_vars) <<- u_variableDefinition$variable[which(u_variableDefinition$type != "x")]
+  })
+  
+  observeEvent(label="observe_Panel1_ApplyLogTransform", input$data_log, {
+    if (DEBUG) print(paste0("[DEBUG] data_log has been changed! ", input$data_log))
     
+    if (input$data_log) {
+      u_variableDefinition$transform[which(u_variableDefinition$type %in% c("d", "n", "s", "f"))] = "log"
+      
+      if (DEBUG) {
+        print("[DEBUG] Showing variable definition table:")
+        print(head(u_variableDefinition))
+        print(str(u_variableDefinition))
+      }
+      
+      output$variableDefinition <- renderRHandsontable({
+        generate_varTable(u_variableDefinition)
+      })
+    } else {
+      u_variableDefinition$transform[which(u_variableDefinition$type %in% c("d", "n", "s", "f"))] = ""
+      
+      if (DEBUG) {
+        print("[DEBUG] Showing variable definition table:")
+        print(head(u_variableDefinition))
+        print(str(u_variableDefinition))
+      }
+      
+      output$variableDefinition <- renderRHandsontable({
+        generate_varTable(u_variableDefinition)
+      })
+    }
+  })
+  
+  observeEvent(label="observe_Panel1_ApplyDemean", input$data_demean, {
+    if (DEBUG) print(paste0("[DEBUG] data_demean has been changed! ", input$data_demean))
+    
+    if (input$data_demean) {
+      u_variableDefinition$demean[which(u_variableDefinition$type %in% c("d", "n", "s", "f"))] = TRUE
+      
+      if (DEBUG) {
+        print("[DEBUG] Showing variable definition table:")
+        print(head(u_variableDefinition))
+        print(str(u_variableDefinition))
+      }
+      
+      output$variableDefinition <- renderRHandsontable({
+        generate_varTable(u_variableDefinition)
+      })
+    } else {
+      u_variableDefinition$demean[which(u_variableDefinition$type %in% c("d", "n", "s", "f"))] = FALSE
+      
+      if (DEBUG) {
+        print("[DEBUG] Showing variable definition table:")
+        print(head(u_variableDefinition))
+        print(str(u_variableDefinition))
+      }
+      
+      output$variableDefinition <- renderRHandsontable({
+        generate_varTable(u_variableDefinition)
+      })
+    }
+  })
+  
+  observeEvent(label="observe_Panel1_ApplyFirstDiff", input$data_firstdiff, {
+    print(paste0("[DEBUG] data_firstdiff has been changed! ", input$data_firstdiff))
+    
+    if (input$data_firstdiff) {
+      u_variableDefinition$firstdiff[which(u_variableDefinition$type %in% c("d", "n", "s", "f"))] = TRUE
+      
+      if (DEBUG) {
+        print("[DEBUG] Showing variable definition table:")
+        print(head(u_variableDefinition))
+        print(str(u_variableDefinition))
+      }
+      
+      output$variableDefinition <- renderRHandsontable({
+        generate_varTable(u_variableDefinition)
+        
+      })
+    } else {
+      u_variableDefinition$firstdiff[which(u_variableDefinition$type %in% c("d", "n", "s", "f"))] = FALSE
+      
+      if (DEBUG) {
+        print("[DEBUG] Showing variable definition table:")
+        print(head(u_variableDefinition))
+        print(str(u_variableDefinition))
+      }
+      
+      output$variableDefinition <- renderRHandsontable({
+        generate_varTable(u_variableDefinition)
+      })
+    }
   })
   
   # Panel 3: Generate regression tree
-  observe({
-    if(input$run) {
+  observeEvent(label="observe_Panel3_GenerateRegressionTree", input$run, {
+    # Prepare input data
+    cat("\nPreparing data...\n")
+    v_dataProc <- data_prepare(p_data, u_variableDefinition, input$period[1], input$period[2], DEMEAN=input$data_demean, FIRSTDIFF=input$data_firstdiff)
+    
+    # Redefine variable definition table
+    v_variableDefinition <- u_variableDefinition 
+    v_variableDefinition$variable <- factor(v_variableDefinition$variable, levels=paste(get_renamedVariables(u_variableDefinition)$old), labels=paste(get_renamedVariables(u_variableDefinition)$new))
+    
+    if (DEBUG) {
+      print("[DEBUG] Showing v_variableDefinition:")
+      print(head(v_variableDefinition))
+    }
+    
+    # Write data
+    cat("\nWriting out files...\n")
+    if (DEBUG) print(paste0("[DEBUG] Showing input$treemod: ", input$treemod))
+    tree_opts   <- data.frame(
+      nbcv       = input$tree_nbcv,
+      cvtype     = ifelse(input$tree_cvtype == "Mean-based CV tree", "1", "2"),
+      sevalue    = input$tree_se,
+      splitfrac  = input$tree_splitfrac,
+      searchtype = ifelse(input$tree_search == "Split point from quantiles", "1", "2"),
+      maxsplits  = input$tree_maxsplit,
+      minnbnodes = input$tree_minnode
+    )
+    if (DEBUG) {
+      print("[DEBUG] Showing tree_opts:")
+      print(tree_opts)
+    }
+    v_dataWrite <- data_write(v_dataProc, v_variableDefinition, input$treemod, tree_opts, v_fpath, v_fname)
+    
+    # Run GUIDE
+    cat("\nRunning GUIDE...\n")
+    runGUIDE(v_fpath, v_fname, SHOW_LOG=TRUE)
+    
+    # Plot tree
+    cat("Plotting regression tree...\n")
+    cat("  > Parsing GUIDE output...\n")
+    v_tree  <<- parse_GUIDEOutput(v_fpath$out)
+    
+    if (DEBUG) {
+      print("[DEBUG] Showing v_tree:")
+      print(head(v_tree))
+    }
+    
+    cat("  > Allocating data to nodes...\n")
+    v_alloc <<- allocateDataToNodes(v_dataProc, v_tree)
+    
+    if (DEBUG) {
+      print("[DEBUG] Showing v_alloc:")
+      print(head(v_alloc))
+    }
+    
+    cat("  > Rendering tree...\n")      
+    output$generateTree <- renderPlotly({
       
-      # Prepare input data
-      cat("\nPreparing data...\n")
-      v_dataProc <- data_prepare(p_data, u_variableDefinition, input$period[1], input$period[2], DEMEAN=TRUE)
-      v_variableDefinition <- get_renamedVariables(u_variableDefinition)
+      library(igraph)
       
-      # Write data
-      cat("\nWriting out files...\n")
-      v_dataWrite <- data_write(v_dataProc, v_variableDefinition, input$treemod, v_fpath, v_fname)
+      # Generate simple tree  
+      g <- graph.tree(1,mode="out")
       
-      # Run GUIDE
-      cat("\nRunning GUIDE...\n")
-      runGUIDE(v_fpath, v_fname, SHOW_LOG=TRUE)
+      # Populate tree
+      # Vertices
+      g <- g + vertices(unique(v_tree$nodeID))
       
-      # Plot tree
-      cat("Plotting regression tree...\n")
-      cat("  > Parsing GUIDE output...\n")
-      v_tree  <<- parse_GUIDEOutput(v_fpath$out)
-      cat("  > Allocating data to nodes...\n")
-      v_alloc <<- allocateDataToNodes(v_dataProc, v_tree)
-      cat("  > Rendering tree...\n")      
-      output$generateTree <- renderPlotly({
+      # Edges
+      vertex_seq = c()
+      for (v in unique(v_tree$nodeID[which(v_tree$nodeType != "Terminal node")])) {
+        left_edge  = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][1])
+        right_edge = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][2])
         
-        library(igraph)
-        
-        # Generate simple tree  
-        g <- graph.tree(1,mode="out")
-        
-        # Populate tree
-        # Vertices
-        g <- g + vertices(unique(v_tree$nodeID))
-        
-        # Edges
-        vertex_seq = c()
-        for (v in unique(v_tree$nodeID[which(v_tree$nodeType != "Terminal node")])) {
-          left_edge  = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][1])
-          right_edge = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][2])
+        if (!is.na(left_edge))  vertex_seq = c(vertex_seq, v, left_edge)
+        if (!is.na(right_edge)) vertex_seq = c(vertex_seq, v, right_edge)
+      }
+      g <- g + edge(vertex_seq)
+      
+      # Additional information
+      node_labels_simple = paste(sapply(strsplit(
+        v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))], "_", fixed=TRUE), 
+        function(x) {
           
-          if (!is.na(left_edge))  vertex_seq = c(vertex_seq, v, left_edge)
-          if (!is.na(right_edge)) vertex_seq = c(vertex_seq, v, right_edge)
-        }
-        g <- g + edge(vertex_seq)
-        
-        # Additional information
-        node_labels_simple = paste(sapply(strsplit(
-          v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))], "_", fixed=TRUE), 
-          function(x) {
-            
-            if (x[1] == "log") {
-              out=x[2]
-            } else { 
-              if (x[1] == "share") {
-                out=paste0("%",x[3])
+          if (x[1] == "log") {
+            out=x[2]
+          } else { 
+            if (x[1] == "share") {
+              out=paste0("%",x[3])
+            } else {
+              if (x[1] == "ratio") {
+                out=paste0("%",x[2])
               } else {
-                if (x[1] == "ratio") {
-                  out=paste0("%",x[2])
-                } else {
-                  out=x[1]
-                }
+                out=x[1]
               }
             }
-            return(out)
-          }))
-        
-        node_labels = paste(sapply(
-          which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID)), 
-          function(x) {
-            
-            cur_var = strsplit(v_tree$variable[x], "_", fixed=TRUE)[[1]]
-            cur_val = round(v_tree$value[x], digits=2)
-            
-            if (cur_var[1] == "log") {
-              out=paste0(cur_var[2], "\n", paste(cur_val))
-            } else { 
-              if (cur_var[1] == "share") {
-                out=paste0("%",cur_var[3], "\n", paste(cur_val))
+          }
+          return(out)
+        }))
+      
+      node_labels = paste(sapply(
+        which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID)), 
+        function(x) {
+          
+          cur_var = strsplit(v_tree$variable[x], "_", fixed=TRUE)[[1]]
+          cur_val = round(v_tree$value[x], digits=2)
+          
+          if (cur_var[1] == "log") {
+            out=paste0(cur_var[2], "\n", paste(cur_val))
+          } else { 
+            if (cur_var[1] == "share") {
+              out=paste0("%",cur_var[3], "\n", paste(cur_val))
+            } else {
+              if (cur_var[1] == "ratio") {
+                out=paste0("%",cur_var[2], "\n", paste(cur_val))
               } else {
-                if (cur_var[1] == "ratio") {
-                  out=paste0("%",cur_var[2], "\n", paste(cur_val))
-                } else {
-                  out=paste0(cur_var[1], "\n", paste(cur_val))
-                }
+                out=paste0(cur_var[1], "\n", paste(cur_val))
               }
             }
-            return(out)
-          }))
+          }
+          return(out)
+        }))
+      
+      vars = unique(v_tree$variable)
+      cols = rainbow(length(vars)) #RColorBrewer::brewer.pal(length(vars), "Set3")
+      cols[which(grepl("co2", vars))] = "black"
+      cols_node = paste(v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
+      
+      for (k in vars) {
+        cols_node  = gsub(k, cols[which(vars == k)], cols_node)
+      }
+      cols_label = gsub("co2", "white", node_labels_simple)
+      cols_label[which(cols_label != "white")] = rep("black", length(which(cols_label != "white")))
+      
+      g <- g  %>%
+        set_vertex_attr("color", value = cols_node) %>% 
+        set_vertex_attr("frame.color", value = cols_node) %>% 
+        set_vertex_attr("label.color", value = cols_label) %>% 
+        set_vertex_attr("label", value = node_labels) %>%  
+        set_vertex_attr("splitting_variable", value = v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))]) %>% 
+        set_vertex_attr("splitting_value",    value = v_tree$value[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
+      
+      
+      L <- layout.reingold.tilford(g)
+      
+      vs <- V(g)
+      es <- as.data.frame(get.edgelist(g))
+      
+      Nv <- length(vs)
+      Ne <- length(es[1]$V1)
+      
+      Xn <- L[,1]
+      Yn <- L[,2]
+      
+      data = data.frame(X=Xn, Y=Yn, 
+                        varname = sapply(strsplit(vs$label, "\n"), function(x) x[1]), 
+                        value   = sapply(strsplit(vs$label, "\n"), function(x) x[2]),
+                        label   = vs$label,
+                        color   = vs$color,
+                        stringsAsFactors = FALSE)
+      
+      cols = data.frame(varname=sapply(strsplit(vs$label, "\n"), function(x) x[1]), color=gsub("black", "#000000FF", vs$color)) %>% 
+        filter(!duplicated(varname))
+      
+      colors=cols$color
+      names(colors) = cols$varname
+      
+      network <- plot_ly(data, x = ~X, y = ~Y, type="scatter", mode = "markers", color=~varname, colors="Set1", text = data$label, hoverinfo = "text", marker = list(size = 14, opacity=1.0))
+      
+      edge_shapes <- list()
+      for(i in 1:Ne) {
+        v0 <- as.numeric(paste(es[i,1])) # Parent node
+        v1 <- as.numeric(paste(es[i,2])) # Child node
         
-        vars = unique(v_tree$variable)
-        cols = rainbow(length(vars)) #RColorBrewer::brewer.pal(length(vars), "Set3")
-        cols[which(grepl("co2", vars))] = "black"
-        cols_node = paste(v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
-        
-        for (k in vars) {
-          cols_node  = gsub(k, cols[which(vars == k)], cols_node)
-        }
-        cols_label = gsub("co2", "white", node_labels_simple)
-        cols_label[which(cols_label != "white")] = rep("black", length(which(cols_label != "white")))
-        
-        g <- g  %>%
-          set_vertex_attr("color", value = cols_node) %>% 
-          set_vertex_attr("frame.color", value = cols_node) %>% 
-          set_vertex_attr("label.color", value = cols_label) %>% 
-          set_vertex_attr("label", value = node_labels) %>%  
-          set_vertex_attr("splitting_variable", value = v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))]) %>% 
-          set_vertex_attr("splitting_value",    value = v_tree$value[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
-        
-        
-        L <- layout.reingold.tilford(g)
-        
-        vs <- V(g)
-        es <- as.data.frame(get.edgelist(g))
-        
-        Nv <- length(vs)
-        Ne <- length(es[1]$V1)
-        
-        Xn <- L[,1]
-        Yn <- L[,2]
-        
-        data = data.frame(X=Xn, Y=Yn, 
-                          varname = sapply(strsplit(vs$label, "\n"), function(x) x[1]), 
-                          value   = sapply(strsplit(vs$label, "\n"), function(x) x[2]),
-                          label   = vs$label,
-                          color   = vs$color,
-                          stringsAsFactors = FALSE)
-        
-        cols = data.frame(varname=sapply(strsplit(vs$label, "\n"), function(x) x[1]), color=gsub("black", "#000000FF", vs$color)) %>% 
-          filter(!duplicated(varname))
-        
-        colors=cols$color
-        names(colors) = cols$varname
-        
-        network <- plot_ly(data, x = ~X, y = ~Y, type="scatter", mode = "markers", color=~varname, colors="Set1", text = data$label, hoverinfo = "text", marker = list(size = 14, opacity=1.0))
-        
-        edge_shapes <- list()
-        for(i in 1:Ne) {
-          v0 <- as.numeric(paste(es[i,1])) # Parent node
-          v1 <- as.numeric(paste(es[i,2])) # Child node
-          
-          edge_shape = list(
-            type = "line",
-            line = list(color = "#030303", width = 0.3),
-            x0 = Xn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - X coordinate
-            y0 = Yn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - Y coordinate
-            x1 = Xn[which(as.numeric(paste(vs$name)) == v1)], # Child node - X coordinate
-            y1 = Yn[which(as.numeric(paste(vs$name)) == v1)]  # Child node - Y coordinate
-          )
-          
-          edge_shapes[[i]] <- edge_shape
-        }
-        
-        axis <- list(title = "", showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
-        
-        p <- layout(
-          network,
-          title  = 'Regression tree',
-          shapes = edge_shapes,
-          xaxis  = axis,
-          yaxis  = axis
+        edge_shape = list(
+          type = "line",
+          line = list(color = "#030303", width = 0.3),
+          x0 = Xn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - X coordinate
+          y0 = Yn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - Y coordinate
+          x1 = Xn[which(as.numeric(paste(vs$name)) == v1)], # Child node - X coordinate
+          y1 = Yn[which(as.numeric(paste(vs$name)) == v1)]  # Child node - Y coordinate
         )
         
-        p
-        
-      })
+        edge_shapes[[i]] <- edge_shape
+      }
       
-    }
+      axis <- list(title = "", showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
+      
+      p <- layout(
+        network,
+        title  = 'Regression tree',
+        shapes = edge_shapes,
+        xaxis  = axis,
+        yaxis  = axis
+      )
+      
+      p
+      
+    })
+    
   })
   
   
   #============ UI =========================
   # Panel 1: Define variables
   output$variableDefinition <- renderRHandsontable({
-    #u_variableDefinition <- values[["u_variableDefinition"]]
-    if (!is.null(u_variableDefinition)) {
-      
-      col_highlight = 1
-      row_highlight = which(u_variableDefinition$type != "x")
-      
-      rhandsontable(
-        u_variableDefinition %>%
-          filter(!variable %in% c("country", "year"), type != "x"), 
-        col_highlight = col_highlight, 
-        row_highlight = row_highlight,
-        rowHeaders = FALSE,
-        width='800') %>%
-        hot_cols(colWidths = c(200, 50, 100, 80)) %>%
-        hot_col("variable",  format = "", source=paste(u_variableDefinition$variable), language = "en-US", default="x") %>%
-        hot_col("type",      format = "", source=c("d", "n", "c", "x"), language = "en-US", default="x") %>%
-        hot_col("factor",    type="numeric", format = "0.0e+0", language = "en-US", default=1.0) %>%
-        hot_col("transform", format = "", source=c("", "log"), language = "en-US", default="") %>%
-        #hot_table(highlightCol = TRUE, highlightRow = TRUE) %>%
-        hot_context_menu(allowRowEdit = TRUE, allowColEdit = FALSE) # %>%
-      # hot_cols(renderer = "
-      #            function(instance, td, row, col, prop, value, cellProperties) {
-      #              Handsontable.renderers.TextRenderer.apply(this, arguments);
-      # 
-      #              td.style.background = 'lightgreen';
-      # 
-      #              return td;
-      #            }")
-      
-      
-      
-      # ,
-      # useTypes = TRUE, 
-      # stretchH = "all"
-    }
-    
+    generate_varTable(u_variableDefinition)
   })
   
   # Panel 2: Explore original and processed input data
@@ -299,10 +386,11 @@ shinyServer(function(input, output, session) {
     
     selectizeInput("treemod",
                    label = h3("Tree model:"),
-                   choices = list("Single tree > LMS - Constant"="Single tree > LMS - Constant"),
+                   choices = list("Single tree > LMS - Constant"="Single tree > LMS - Constant",
+                                  "Single tree > LS - Constant"="Single tree > LS - Constant"),
                    selected = "Single tree > LMS - Constant",
                    multiple=FALSE,
-                   options = list(maxItems = 1, placeholder = 'Select tree model'))
+                   options = list(maxItems = 2, placeholder = 'Select tree model'))
   })
   
   # Panel 4: Explore results # 1 - T-nodes  
@@ -357,13 +445,12 @@ shinyServer(function(input, output, session) {
   # Panel 1: Define variables
   output$GUIDEversion <- renderText({
     out    <- ""
-    # tryCatch(
-    #   ver_ws <<- checkWebsiteVersion(),
-    #   error = function(e) {
-    #     ver_ws <<- NULL
-    #   } 
-    # )
-    ver_ws <- NULL
+    tryCatch(
+      ver_ws <<- checkWebsiteVersion(),
+      error = function(e) {
+        ver_ws <<- NULL
+      }
+    )
     tryCatch(
       ver_lo <<- checkLocalVersion(),
       error = function(e) {
@@ -377,8 +464,8 @@ shinyServer(function(input, output, session) {
       }
     } else {
       print("Warning: could not check GUIDE versions.")
-      print(paste("ver_ws:", ver_ws))
-      print(paste("ver_lo:", ver_lo))
+      if (DEBUG) print(paste("[DEBUG] ver_ws:", ver_ws))
+      if (DEBUG) print(paste("[DEBUG] ver_lo:", ver_lo))
     }
     
     return(out)
@@ -420,69 +507,85 @@ shinyServer(function(input, output, session) {
   output$inputDataPlot <- renderPlotly({
     
     # Original data
+    if (DEBUG) print("[DEBUG] Generate plot data (original)")
     v_plotOriginal <- p_data %>% 
       filter(country %in% input$country) %>% 
       filter(year >= input$period[1], year <= input$period[2]) %>% 
       gather(variable, value, -country, -year) %>% 
       inner_join(u_variableDefinition, by = "variable") %>% 
       filter(type != "x") %>% 
-      filter(variable %in% input$variable)
+      filter(variable %in% input$variable) %>% 
+      mutate(variable = paste0(input$variable, " (Original)")) %>% 
+      mutate(variable = factor(variable))
     
+    if (DEBUG) print("[DEBUG] Plot data (original)")
     p1 = ggplot(v_plotOriginal) + 
       geom_line(aes(x=year,y=value,color=country)) + 
       geom_point(aes(x=year,y=value,color=country)) +
       facet_wrap(~variable, scales = "free_y") +
       theme_bw() +
       xlab("") +
-      ggtitle("Original") +
       theme(legend.position="none")
     
     # Processed data
-    v_plotProcessed <- p_data %>% 
-      filter(country %in% input$country) %>% 
-      filter(year >= input$period[1], year <= input$period[2]) %>% 
-      gather(variable, value, -country, -year) %>% 
-      inner_join(u_variableDefinition, by = "variable") %>% 
-      filter(type != "x") %>% 
-      filter(variable %in% input$variable) %>% 
-      mutate(value=value*factor)  +
-      ggtitle("Processed") +
-      
-      tmp_numVars = (u_variableDefinition %>% 
-                       filter(type %in% c("d", "n", "f", "s"), 
-                              transform != "") %>% 
+    if (DEBUG) print("[DEBUG] Generate plot data (processed)")
+    v_plotProcessed <- p_data %>%
+      filter(country %in% input$country) %>%
+      filter(year >= input$period[1], year <= input$period[2]) %>%
+      gather(variable, value, -country, -year) %>%
+      inner_join(u_variableDefinition, by = "variable") %>%
+      filter(type != "x") %>%
+      filter(variable %in% input$variable) %>%
+      mutate(variable = paste0(input$variable, " (Processed)")) %>% 
+      mutate(variable = factor(variable)) %>% 
+      mutate(value=value*factor) 
+
+      tmp_numVars = (u_variableDefinition %>%
+                       filter(type %in% c("d", "n", "f", "s"),
+                              transform != "") %>%
                        select(variable)
-      )$variable %>% 
+      )$variable %>%
       paste()
-    
-    for (kvar in tmp_numVars) {
-      # Logarithm
-      if (u_variableDefinition$transform[which(u_variableDefinition$variable == kvar)] == "log") {
-        # Apply transformation
-        v_plotProcessed$value[which(v_plotProcessed$variable == kvar)] <- log(v_plotProcessed$value[which(v_plotProcessed$variable == kvar)])
-        # Rename variable
-        #p_variableRenaming <- rbind(p_variableRenaming,
-        #                            data.frame(old=kvar, new=paste0("log_",kvar)))
+
+    if (input$data_log) {
+      if (DEBUG) print("[DEBUG] Log-transform numerical variables (processed)")
+      for (kvar in tmp_numVars) {
+        # Logarithm
+        if (u_variableDefinition$transform[which(u_variableDefinition$variable == kvar)] == "log") {
+          # Apply transformation
+          v_plotProcessed$value[which(v_plotProcessed$variable == kvar)] <- log(v_plotProcessed$value[which(v_plotProcessed$variable == kvar)])
+        }
       }
-      # Other functions ...
     }
-    
-    if (input$demean) {
+
+    if (input$data_demean) {
+      if (DEBUG) print("[DEBUG] Demean numerical variables (processed)")
       for (kvar in tmp_numVars) {
         v_plotProcessed <- v_plotProcessed %>%
           group_by(country,variable) %>%
-          mutate(value=ifelse(type %in% c("d","n","s","f"), value-mean(value), value)) %>% 
+          mutate(value=ifelse(type %in% c("d","n","s","f"), value-mean(value), value)) %>%
           ungroup()
       }
-      
     }
-    
+      
+    if (input$data_firstdiff) {
+      if (DEBUG) print("[DEBUG] Apply first-differences to numerical variables (processed)")
+      for (kvar in tmp_numVars) {
+        v_plotProcessed <- v_plotProcessed %>%
+          group_by(country,variable) %>%
+          arrange(year) %>% 
+          mutate(value=ifelse(type %in% c("d","n","s","f"), value-lag(value), value)) %>%
+          ungroup()
+      }
+    }
+
+    if (DEBUG) print("[DEBUG] Plot data (Processed)")
     p2 = ggplot(v_plotProcessed) + 
       geom_line(aes(x=year,y=value,color=country)) + 
       geom_point(aes(x=year,y=value,color=country)) +
       facet_wrap(~variable, scales = "free_y") +
       theme_bw() +
-      xlab("") +
+      xlab("")  +
       theme(legend.position="none")
     
     if (input$ylog) {
@@ -490,6 +593,7 @@ shinyServer(function(input, output, session) {
       p2 = p2 + scale_y_log10()
     }
     
+    if (DEBUG) print("[DEBUG] Combine plots (original + processed)")
     subplot(
       ggplotly(p1), # Original data
       ggplotly(p2)) # Processed data
@@ -499,144 +603,151 @@ shinyServer(function(input, output, session) {
   # Panel 3: Generate interactive regression tree
   output$generateTree <- renderPlotly({
     
-    library(igraph)
-    
-    # Generate simple tree  
-    g <- graph.tree(1,mode="out")
-    
-    # Populate tree
-    # Vertices
-    g <- g + vertices(unique(v_tree$nodeID))
-    
-    # Edges
-    vertex_seq = c()
-    for (v in unique(v_tree$nodeID[which(v_tree$nodeType != "Terminal node")])) {
-      left_edge  = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][1])
-      right_edge = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][2])
+    if(exists("values$v_tree")) {
+    #if (!is.null(v_tree)) {
       
-      if (!is.na(left_edge))  vertex_seq = c(vertex_seq, v, left_edge)
-      if (!is.na(right_edge)) vertex_seq = c(vertex_seq, v, right_edge)
-    }
-    g <- g + edge(vertex_seq)
-    
-    # Additional information
-    node_labels_simple = paste(sapply(strsplit(
-      v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))], "_", fixed=TRUE), 
-      function(x) {
+      library(igraph)
+      
+      # Generate simple tree  
+      g <- graph.tree(1,mode="out")
+      
+      # Populate tree
+      # Vertices
+      g <- g + vertices(unique(v_tree$nodeID))
+      
+      # Edges
+      vertex_seq = c()
+      for (v in unique(v_tree$nodeID[which(v_tree$nodeType != "Terminal node")])) {
+        left_edge  = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][1])
+        right_edge = trimws(strsplit(v_tree$childNodeIDs[which(v_tree$nodeID == v)[1]], ",", fixed=TRUE)[[1]][2])
         
-        if (x[1] == "log") {          # if variable has a log prefix
-          out=x[2]
-        } else { 
-          if (x[1] == "share") {      # if variable has a share prefix
-            out=paste0("%",x[3])
-          } else {
-            if (x[1] == "ratio") {    # if variable has a ratio prefix
-              out=paste0("%",x[2])
+        if (!is.na(left_edge))  vertex_seq = c(vertex_seq, v, left_edge)
+        if (!is.na(right_edge)) vertex_seq = c(vertex_seq, v, right_edge)
+      }
+      g <- g + edge(vertex_seq)
+      
+      # Additional information
+      node_labels_simple = paste(sapply(strsplit(
+        v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))], "_", fixed=TRUE), 
+        function(x) {
+          
+          if (x[1] == "log") {          # if variable has a log prefix
+            out=x[2]
+          } else { 
+            if (x[1] == "share") {      # if variable has a share prefix
+              out=paste0("%",x[3])
             } else {
-              out=x[1]
+              if (x[1] == "ratio") {    # if variable has a ratio prefix
+                out=paste0("%",x[2])
+              } else {
+                out=x[1]
+              }
             }
           }
-        }
-        return(out)
-      }))
-    
-    node_labels = paste(sapply(
-      which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID)), 
-      function(x) {
-        
-        cur_var = strsplit(v_tree$variable[x], "_", fixed=TRUE)[[1]]
-        cur_val = round(v_tree$value[x], digits=2)
-        
-        if (cur_var[1] == "log") {
-          out=paste0(cur_var[2], "\n", paste(cur_val))
-        } else { 
-          if (cur_var[1] == "share") {
-            out=paste0("%",cur_var[3], "\n", paste(cur_val))
-          } else {
-            if (cur_var[1] == "ratio") {
-              out=paste0("%",cur_var[2], "\n", paste(cur_val))
+          return(out)
+        }))
+      
+      node_labels = paste(sapply(
+        which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID)), 
+        function(x) {
+          
+          cur_var = strsplit(v_tree$variable[x], "_", fixed=TRUE)[[1]]
+          cur_val = round(v_tree$value[x], digits=2)
+          
+          if (cur_var[1] == "log") {
+            out=paste0(cur_var[2], "\n", paste(cur_val))
+          } else { 
+            if (cur_var[1] == "share") {
+              out=paste0("%",cur_var[3], "\n", paste(cur_val))
             } else {
-              out=paste0(cur_var[1], "\n", paste(cur_val))
+              if (cur_var[1] == "ratio") {
+                out=paste0("%",cur_var[2], "\n", paste(cur_val))
+              } else {
+                out=paste0(cur_var[1], "\n", paste(cur_val))
+              }
             }
           }
-        }
-        return(out)
-      }))
-    
-    vars = unique(v_tree$variable)
-    cols = rainbow(length(vars)) #RColorBrewer::brewer.pal(length(vars), "Set3")
-    cols[which(grepl("co2", vars))] = "black"
-    cols_node = paste(v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
-    
-    for (k in vars) {
-      cols_node  = gsub(k, cols[which(vars == k)], cols_node)
-    }
-    cols_label = gsub("co2", "white", node_labels_simple)
-    cols_label[which(cols_label != "white")] = rep("black", length(which(cols_label != "white")))
-    
-    g <- g  %>%
-      set_vertex_attr("color", value = cols_node) %>% 
-      set_vertex_attr("frame.color", value = cols_node) %>% 
-      set_vertex_attr("label.color", value = cols_label) %>% 
-      set_vertex_attr("label", value = node_labels) %>%  
-      set_vertex_attr("splitting_variable", value = v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))]) %>% 
-      set_vertex_attr("splitting_value",    value = v_tree$value[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
-    
-    
-    L <- layout.reingold.tilford(g)
-    
-    vs <- V(g)
-    es <- as.data.frame(get.edgelist(g))
-    
-    Nv <- length(vs)
-    Ne <- length(es[1]$V1)
-    
-    Xn <- L[,1]
-    Yn <- L[,2]
-    
-    data = data.frame(X=Xn, Y=Yn, 
-                      varname = sapply(strsplit(vs$label, "\n"), function(x) x[1]), 
-                      value   = sapply(strsplit(vs$label, "\n"), function(x) x[2]),
-                      label   = vs$label,
-                      color   = vs$color,
-                      stringsAsFactors = FALSE)
-    
-    cols = data.frame(varname=sapply(strsplit(vs$label, "\n"), function(x) x[1]), color=gsub("black", "#000000FF", vs$color)) %>% 
-      filter(!duplicated(varname))
-    
-    colors=cols$color
-    names(colors) = cols$varname
-    
-    network <- plot_ly(data, x = ~X, y = ~Y, type="scatter", mode = "markers", color=~varname, colors="Set1", text = data$label, hoverinfo = "text", marker = list(size = 14, opacity=1.0))
-    
-    edge_shapes <- list()
-    for(i in 1:Ne) {
-      v0 <- as.numeric(paste(es[i,1])) # Parent node
-      v1 <- as.numeric(paste(es[i,2])) # Child node
+          return(out)
+        }))
       
-      edge_shape = list(
-        type = "line",
-        line = list(color = "#030303", width = 0.3),
-        x0 = Xn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - X coordinate
-        y0 = Yn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - Y coordinate
-        x1 = Xn[which(as.numeric(paste(vs$name)) == v1)], # Child node - X coordinate
-        y1 = Yn[which(as.numeric(paste(vs$name)) == v1)]  # Child node - Y coordinate
+      vars = unique(v_tree$variable)
+      cols = rainbow(length(vars)) #RColorBrewer::brewer.pal(length(vars), "Set3")
+      cols[which(grepl("co2", vars))] = "black"
+      cols_node = paste(v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
+      
+      for (k in vars) {
+        cols_node  = gsub(k, cols[which(vars == k)], cols_node)
+      }
+      cols_label = gsub("co2", "white", node_labels_simple)
+      cols_label[which(cols_label != "white")] = rep("black", length(which(cols_label != "white")))
+      
+      g <- g  %>%
+        set_vertex_attr("color", value = cols_node) %>% 
+        set_vertex_attr("frame.color", value = cols_node) %>% 
+        set_vertex_attr("label.color", value = cols_label) %>% 
+        set_vertex_attr("label", value = node_labels) %>%  
+        set_vertex_attr("splitting_variable", value = v_tree$variable[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))]) %>% 
+        set_vertex_attr("splitting_value",    value = v_tree$value[which(v_tree$nodeID %in% unique(v_tree$nodeID) & !duplicated(v_tree$nodeID))])
+      
+      
+      L <- layout.reingold.tilford(g)
+      
+      vs <- V(g)
+      es <- as.data.frame(get.edgelist(g))
+      
+      Nv <- length(vs)
+      Ne <- length(es[1]$V1)
+      
+      Xn <- L[,1]
+      Yn <- L[,2]
+      
+      data = data.frame(X=Xn, Y=Yn, 
+                        varname = sapply(strsplit(vs$label, "\n"), function(x) x[1]), 
+                        value   = sapply(strsplit(vs$label, "\n"), function(x) x[2]),
+                        label   = vs$label,
+                        color   = vs$color,
+                        stringsAsFactors = FALSE)
+      
+      cols = data.frame(varname=sapply(strsplit(vs$label, "\n"), function(x) x[1]), color=gsub("black", "#000000FF", vs$color)) %>% 
+        filter(!duplicated(varname))
+      
+      colors=cols$color
+      names(colors) = cols$varname
+      
+      network <- plot_ly(data, x = ~X, y = ~Y, type="scatter", mode = "markers", color=~varname, colors="Set1", text = data$label, hoverinfo = "text", marker = list(size = 14, opacity=1.0))
+      
+      edge_shapes <- list()
+      for(i in 1:Ne) {
+        v0 <- as.numeric(paste(es[i,1])) # Parent node
+        v1 <- as.numeric(paste(es[i,2])) # Child node
+        
+        edge_shape = list(
+          type = "line",
+          line = list(color = "#030303", width = 0.3),
+          x0 = Xn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - X coordinate
+          y0 = Yn[which(as.numeric(paste(vs$name)) == v0)], # Parent node - Y coordinate
+          x1 = Xn[which(as.numeric(paste(vs$name)) == v1)], # Child node - X coordinate
+          y1 = Yn[which(as.numeric(paste(vs$name)) == v1)]  # Child node - Y coordinate
+        )
+        
+        edge_shapes[[i]] <- edge_shape
+      }
+      
+      axis <- list(title = "", showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
+      
+      p <- layout(
+        network,
+        title  = 'Regression tree',
+        shapes = edge_shapes,
+        xaxis  = axis,
+        yaxis  = axis
       )
       
-      edge_shapes[[i]] <- edge_shape
+      p
+    } else {
+      p = plot(0,0, type = "n")
+      p
     }
-    
-    axis <- list(title = "", showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE)
-    
-    p <- layout(
-      network,
-      title  = 'Regression tree',
-      shapes = edge_shapes,
-      xaxis  = axis,
-      yaxis  = axis
-    )
-    
-    p
     
   })
   

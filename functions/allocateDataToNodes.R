@@ -1,11 +1,21 @@
 # Allocate terminal nodes to data
 allocateDataToNodes <- function(i_data, i_nodeInfo) {
-  # Get all terminal nodes
-  tNodeIDs <- i_nodeInfo$nodeID[which(i_nodeInfo$nodeType == "Terminal node")]
   
-  paths <- lapply(tNodeIDs, getParentNodeID)
+  if (DEBUG) {
+    print("[DEBUG] Showing i_data & i_nodeInfo:")
+    print(head(i_data))
+    print(head(i_nodeInfo))
+  }
+  
+  # Get all terminal nodes
+  if (DEBUG) print("[DEBUG] allocateDataToNodes: Get all terminal nodes")
+  idTnodes <- which(i_nodeInfo$nodeType == "Terminal node")
+  tNodeIDs <- i_nodeInfo$nodeID[idTnodes]
+
+  paths <- lapply(tNodeIDs, function(x) getParentNodeID(x,i_nodeInfo))
   
   # Get list of function sequences
+  if (DEBUG) print("[DEBUG] allocateDataToNodes: Get list of function sequences")
   llfs <- lapply(
     # 1. Generate paths
     lapply(
@@ -51,6 +61,7 @@ allocateDataToNodes <- function(i_data, i_nodeInfo) {
   }
   
   # Perform allocation
+  if (DEBUG) print("[DEBUG] allocateDataToNodes: Perform allocation")
   out <- do.call("rbind", lapply(llfs, myfreduce))
   
   return(out)

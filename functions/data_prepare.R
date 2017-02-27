@@ -17,7 +17,7 @@ filter_NA <- function(i_data, i_vardef) {
     spread(variable,value)                          # Switch back to wide format
   
   # Count number of NA values for each country
-  data_NA_country <- dataStats %>% 
+  data_NA_country <- data_NA_country_variable %>% 
     gather(variable,value,-country) %>% 
     group_by(country) %>% 
     summarize(value=sum(value)) %>% 
@@ -31,7 +31,7 @@ filter_NA <- function(i_data, i_vardef) {
   return(out)
 }
 
-filter_X  <- function(i_data, i_vardef) {
+filter_X <- function(i_data, i_vardef) {
   
   # Get selected variable names 
   varnames <- paste(i_vardef$variable[which(i_vardef$type != "x")])
@@ -42,7 +42,7 @@ filter_X  <- function(i_data, i_vardef) {
   return(i_data)
 }
 
-rescaleVariable   <- function(i_data, i_vardef) {
+rescaleVariable <- function(i_data, i_vardef) {
   # Get names of numerical variables
   numVarnames <- paste((i_vardef %>% filter(type %in% c("d", "n", "f", "s"), factor != 1))$variable)
   
