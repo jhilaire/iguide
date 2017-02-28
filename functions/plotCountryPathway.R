@@ -1,4 +1,5 @@
 plotCountryPathway <- function(i_pathway, i_nodeInfo) {
+  
   p = ggplot() +
     geom_point(aes(x=pos, y=0), size=10, color="black",
                data=i_pathway %>% filter(!duplicated(node))) +
@@ -71,10 +72,7 @@ plotCountryPathway <- function(i_pathway, i_nodeInfo) {
                    curvature=curv,
                    arrow = grid::arrow(length = grid::unit(0.015, "npc")))
     }
-    
-    
   }
-  
   
   for (knode in unique(i_pathway$node)) {
     pos_cur = i_pathway$pos[which(i_pathway$node == knode)][1]

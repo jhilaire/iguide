@@ -35,7 +35,7 @@ plotScatterCountry <- function(i_alloc, i_nodeInfo, i_country, i_var_x, i_var_y,
   
   # Plot country data (transition)
   p = p + 
-    geom_line(aes_string(x=i_var_x, y=i_var_y), data=i_alloc %>% filter(country == i_country), colour="black", size=1.25) +
+    geom_path(aes_string(x=i_var_x, y=i_var_y), data=i_alloc %>% filter(country == i_country) %>% arrange(year), colour="black", size=1.25) +
     geom_point(aes_string(x=i_var_x, y=i_var_y, fill=i_var_col), data=i_alloc %>% filter(country == i_country), pch=21, colour="black", size=4)
   if (PLOT_LABELS) {
     p = p +

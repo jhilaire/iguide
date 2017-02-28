@@ -1,0 +1,8 @@
+Title: iGUIDE
+Author: Jerome Hilaire
+AuthorEmail: hilaire@mcc-berlin.net 
+Version: 0.02
+License: GPL-3
+DisplayMode: normal
+Tags: GUIDE, Regression tree
+Type: Shiny

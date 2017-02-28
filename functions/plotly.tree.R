@@ -1,4 +1,4 @@
-plotly.tree <- function(i_tree) {
+plotly.tree <- function(i_tree, i_alloc) {
   library(igraph)
   
   # Generate simple tree  
@@ -21,20 +21,14 @@ plotly.tree <- function(i_tree) {
   }
   g <- g + edge(vertex_seq)
   
-  # Additional information
-  
-  #cols_node  = gsub("Root node", "black", gsub("Intermediate node", "orange", gsub("Terminal node", "red", i_tree$nodeType[which(i_tree$nodeID %in% unique(i_tree$nodeID) & !duplicated(i_tree$nodeID))])))
-  #cols_label = gsub("Root node", "white", gsub("Intermediate node", "black", gsub("Terminal node", "black", i_tree$nodeType[which(i_tree$nodeID %in% unique(i_tree$nodeID) & !duplicated(i_tree$nodeID))])))
-  
-  #cols = c("blue","red","black")
-  
+  # Generate Simple Node labels
   node_labels_simple = paste(sapply(strsplit(
-    i_tree$variable[which(i_tree$nodeID %in% unique(i_tree$nodeID) & !duplicated(i_tree$nodeID))], "_", fixed=TRUE), 
+    i_tree$variable[which(i_tree$nodeID %in% unique(i_tree$nodeID) & !duplicated(i_tree$nodeID))], "_", fixed=TRUE),
     function(x) {
-      
+
       if (x[1] == "log") {
         out=x[2]
-      } else { 
+      } else {
         if (x[1] == "share") {
           out=paste0("%",x[3])
         } else {
@@ -48,34 +42,43 @@ plotly.tree <- function(i_tree) {
       return(out)
     }))
   
+  # Generate Node labels
   node_labels = paste(sapply(
     which(i_tree$nodeID %in% unique(i_tree$nodeID) & !duplicated(i_tree$nodeID)), 
     function(x) {
       
-      cur_var = strsplit(i_tree$variable[x], "_", fixed=TRUE)[[1]]
-      cur_val = round(i_tree$value[x], digits=2)
+      cur_nodeType = i_tree$nodeType[x]
+      cur_nodeid   = i_tree$nodeID[x]
+      cur_var      = i_tree$variable[x] #strsplit(i_tree$variable[x], "_", fixed=TRUE)[[1]]
+      cur_val      = round(i_tree$value[x], digits=2)
       
-      if (cur_var[1] == "log") {
-        out=paste0(cur_var[2], "\n", paste(cur_val))
-      } else { 
-        if (cur_var[1] == "share") {
-          out=paste0("%",cur_var[3], "\n", paste(cur_val))
-        } else {
-          if (cur_var[1] == "ratio") {
-            out=paste0("%",cur_var[2], "\n", paste(cur_val))
-          } else {
-            out=paste0(cur_var[1], "\n", paste(cur_val))
-          }
-        }
+      if (cur_nodeType != "Terminal node") {
+        out=paste0(cur_nodeType," [", cur_nodeid, "]\n", "Splitting variable: ", cur_var, "\n", "Cutting value: ", paste(cur_val))
+      } else {
+        depvar <- gsub("-mean", "", cur_var)
+        tmp <- i_alloc %>% 
+          select_("tnode",depvar) %>% 
+          rename_("value"=depvar) %>% 
+          filter(tnode == cur_nodeid) %>% 
+          group_by(tnode) %>% 
+          summarise(
+            count=n(),
+            se   = sd(value)) %>% 
+          ungroup()
+        cur_n  = tmp$count
+        cur_se = round(tmp$se, digits=3)
+          
+        out=paste0(cur_nodeType," [", cur_nodeid, "]\n", "Dependent variable: ", cur_var, "\n", "Central value: ", paste(cur_val), "\n",
+                   "N:", cur_n, " (",cur_se,")")
       }
       return(out)
     }))
   
   vars = unique(i_tree$variable)
-  cols = rainbow(length(vars)) #RColorBrewer::brewer.pal(length(vars), "Set3")
+  cols = rainbow(length(vars))
   cols[which(grepl("co2", vars))] = "black"
   cols_node = paste(i_tree$variable[which(i_tree$nodeID %in% unique(i_tree$nodeID) & !duplicated(i_tree$nodeID))])
-  
+
   for (k in vars) {
     cols_node  = gsub(k, cols[which(vars == k)], cols_node)
   }
@@ -103,19 +106,22 @@ plotly.tree <- function(i_tree) {
   Yn <- L[,2]
   
   data = data.frame(X=Xn, Y=Yn, 
-                    varname = sapply(strsplit(vs$label, "\n"), function(x) x[1]), 
-                    value   = sapply(strsplit(vs$label, "\n"), function(x) x[2]),
-                    label   = vs$label,
+                    varname = sapply(strsplit(vs$label, "\n"), function(x) strsplit(x[2],":")[[1]][2]), 
+                    value   = sapply(strsplit(vs$label, "\n"), function(x) x[3]),
+                    label   = gsub("\n", "</br>", vs$label),
                     color   = vs$color,
                     stringsAsFactors = FALSE)
   
-  cols = data.frame(varname=sapply(strsplit(vs$label, "\n"), function(x) x[1]), color=gsub("black", "#000000FF", vs$color)) %>% 
+  cols = data.frame(varname=sapply(strsplit(vs$label, "\n"), function(x) strsplit(x[2],":")[[1]][2]), color=gsub("black", "#000000FF", vs$color)) %>% 
     filter(!duplicated(varname))
   
   colors=cols$color
   names(colors) = cols$varname
   
-  network <- plot_ly(data, x = ~X, y = ~Y, type="scatter", mode = "markers", color=~varname, colors="Set1", text = data$label, hoverinfo = "text", marker = list(size = 14, opacity=1.0))
+  network <- plot_ly(data, x = ~X, y = ~Y, 
+                     type="scatter", mode = "markers", color=~varname, colors="Set1", 
+                     text = data$label, hoverinfo = "text", 
+                     marker = list(size = 20, opacity=1.0))
   
   edge_shapes <- list()
   for(i in 1:Ne) {
@@ -144,6 +150,6 @@ plotly.tree <- function(i_tree) {
     yaxis  = axis
   )
 
-  p
+  return(p)
 
 }

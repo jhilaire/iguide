@@ -1,7 +1,7 @@
 getPathNodeInfo <- function(i_tnode, i_nodeInfo) {
   
-  path <- as.numeric(rev(getParentNodeID(i_tnode)))
-  
+  path <- as.numeric(rev(getParentNodeID(i_tnode, i_nodeInfo)))
+  if (DEBUG) print("[DEBUG] getPathNodeInfo: Call to getParentNodeID OK")
   
   
   # 3. Transform rules to functions

@@ -28,6 +28,10 @@ checkWebsiteVersion <- function() {
     if (DEBUG) paste0("[DEBUG] Get version from website: ", ver, " (save in ", fname, ")")
     
   } else {
+    
+    other_files <- list.files(".", pattern=".tmp_GUIDEversion_", all.files = TRUE)[which(list.files(".", pattern=".tmp_GUIDEversion_", all.files = TRUE) != fname)]
+    if (length(other_files) != 0) file.remove(other_files)
+    
     ver <- readLines(fname,n=1)
     
     if (DEBUG) paste0("[DEBUG] Get version from saved file (", fname,"): ", ver)

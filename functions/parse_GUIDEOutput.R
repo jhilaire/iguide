@@ -93,6 +93,14 @@ parse_GUIDEOutput <- function(i_outfpath) {
     }
   }
   
+  if (length(which(v_tree$childNodeIDs != "" & v_tree$nodeType == "Terminal node" & is.na(v_tree$value))) != 0) {
+    v_tree$nodeType[which(v_tree$childNodeIDs != "" & v_tree$nodeType == "Terminal node" & is.na(v_tree$value))]       <- "Intermediate node"
+  }
+  if (length(which(v_tree$childNodeIDs != "" & v_tree$nodeType == "Terminal node" & !is.na(v_tree$value))) != 0) {
+    v_tree$childNodeIDs[which(v_tree$childNodeIDs != "" & v_tree$nodeType == "Terminal node" & !is.na(v_tree$value))] <- ""
+  }
+  
+  
   # Define child nodes
   v_tree <- v_tree %>% 
     mutate(childNodeIDs = "")

@@ -106,7 +106,7 @@ demeanVariable <- function(i_data, i_vardef) {
   return(i_data)
 }
 
-get_renamedVariables <- function(i_vardef) {
+get_renamedVariables <- function(i_vardef, ALL=FALSE) {
   # Initialise
   v_variableRenaming = data.frame()
   
@@ -123,6 +123,15 @@ get_renamedVariables <- function(i_vardef) {
                                   data.frame(old=kvar, new=paste0("log_",kvar)))
     }
     # Other functions (TODO)...
+  }
+  
+  if (ALL) {
+    for (kvar in numVarnames) {
+      if (!kvar %in% v_variableRenaming$old) {
+        v_variableRenaming <- rbind(v_variableRenaming,
+                                    data.frame(old=kvar, new=kvar))
+      }
+    }
   }
   
   return(v_variableRenaming)
